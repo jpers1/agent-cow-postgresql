@@ -40,7 +40,7 @@ RECOMMENDED_PUBLIC_API = {
 
 def test_release_version_and_recommended_exports() -> None:
     """Release documentation names only real downstream public APIs."""
-    assert agentcow.__version__ == "0.2.0"
+    assert agentcow.__version__ == "0.2.1"
     assert RECOMMENDED_PUBLIC_API <= set(postgres_api.__all__)
     assert importlib.util.find_spec("agentcow.blob") is None
 
