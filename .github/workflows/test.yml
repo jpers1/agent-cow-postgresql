@@ -172,20 +172,30 @@ jobs:
       - run: uv sync --frozen --group dev
       - run: .venv/bin/python scripts/check_dependency_policy.py
       - run: .venv/bin/python -m build --no-isolation --wheel --sdist
-      - run: test -f dist/agent_cow_postgresql-0.2.0-py3-none-any.whl
+      - run: test -f dist/agent_cow_postgresql-0.2.1-py3-none-any.whl
 
       - name: Install built wheel in a fresh environment
         run: |
           python -m venv /tmp/agentcow-wheel
           /tmp/agentcow-wheel/bin/python -m pip install dist/*.whl
-          /tmp/agentcow-wheel/bin/python - <<'PY'
+          # Run the smoke from outside the checkout so imports cannot
+          # resolve to the source tree, and verify the imported module
+          # really is the installed wheel's copy.
+          WHEEL_PATH="$(pwd)/dist/agent_cow_postgresql-0.2.1-py3-none-any.whl"
+          cd /tmp
+          WHEEL_PATH="$WHEEL_PATH" /tmp/agentcow-wheel/bin/python - <<'PY'
+          import hashlib
           import importlib.metadata
           import importlib.util
+          import os
+          import zipfile
+          from pathlib import Path
 
           import agentcow
+          import agentcow.postgres.cow_sql_functions as cow_sql_functions
 
-          assert agentcow.__version__ == "0.2.0"
-          assert importlib.metadata.version("agent-cow-postgresql") == "0.2.0"
+          assert agentcow.__version__ == "0.2.1"
+          assert importlib.metadata.version("agent-cow-postgresql") == "0.2.1"
           assert importlib.util.find_spec("agentcow.blob") is None
           try:
               importlib.metadata.version("agent-cow")
@@ -193,5 +203,21 @@ jobs:
               pass
           else:
               raise AssertionError("renamed wheel provides the historical distribution")
+
+          # The imported module must be the installed wheel's copy inside
+          # the fresh environment, not a file from the source checkout.
+          module_file = Path(cow_sql_functions.__file__).resolve()
+          venv_root = Path("/tmp/agentcow-wheel")
+          assert venv_root in module_file.parents, module_file
+          assert "site-packages" in module_file.parts, module_file
+
+          # The installed SQL bytes must equal the built wheel's entry.
+          with zipfile.ZipFile(os.environ["WHEEL_PATH"]) as wheel:
+              wheel_bytes = wheel.read(
+                  "agentcow/postgres/cow_sql_functions.py"
+              )
+          assert hashlib.sha256(wheel_bytes).digest() == hashlib.sha256(
+              module_file.read_bytes()
+          ).digest()
           print(agentcow.__version__)
           PY

@@ -3,6 +3,31 @@
 This changelog records maintained downstream changes. The fork preserves the
 history and MIT attribution of `trail-ml/agent-cow-python`.
 
+## Unreleased — 0.2.1 candidate
+
+Proposed patch release candidate prepared for review; this entry claims no
+registry publication.
+
+### Fixed
+
+- Composite foreign key dependency inspection: pair referencing and
+  referenced columns through the constraint's own declared key positions
+  and match the complete declared tuple, eliminating undefined-operator
+  errors for mixed-type keys and false dependency edges for shared
+  constraint names. Schema confinement, the reviewer guard, operation
+  ordering, and same-row exclusion are unchanged.
+- Packaging verification: the fresh-environment wheel install check now
+  runs outside the source checkout and verifies that the imported module
+  resolves from the installed wheel, with its SQL bytes bound to the built
+  wheel.
+
+### Added
+
+- Eight portable regressions for composite foreign key dependency pairing:
+  canonical parents, full and partial tuple matches, reversed referenced-key
+  order, nullable components, duplicate constraint names, and cross-schema
+  decoys.
+
 ## 0.2.0 — 2026-08-16
 
 First maintained PostgreSQL-focused downstream release. Derived from Trail's
