@@ -53,7 +53,7 @@ Without copy-on-write:            With agent-cow-postgresql:
 
 ## Installation
 
-Install the maintained `0.2.0` release from PyPI with:
+Install the maintained `0.2.1` release from PyPI with:
 
 ```bash
 python -m pip install agent-cow-postgresql
@@ -67,7 +67,7 @@ Alternatively, install the tagged Git revision with:
 
 ```bash
 python -m pip install \
-  "agent-cow-postgresql @ git+https://github.com/jpers1/agent-cow-postgresql.git@v0.2.0"
+  "agent-cow-postgresql @ git+https://github.com/jpers1/agent-cow-postgresql.git@v0.2.1"
 ```
 
 The GitHub Release provides the same wheel and source distribution submitted

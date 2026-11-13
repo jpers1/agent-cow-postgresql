@@ -3,10 +3,7 @@
 This changelog records maintained downstream changes. The fork preserves the
 history and MIT attribution of `trail-ml/agent-cow-python`.
 
-## Unreleased — 0.2.1 candidate
-
-Proposed patch release candidate prepared for review; this entry claims no
-registry publication.
+## 0.2.1
 
 ### Fixed
 
