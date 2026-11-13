@@ -1728,6 +1728,10 @@ DECLARE
     base_table_name text;
     referenced_table_name text;
     referenced_changes_table text;
+    ref_column_list text;
+    fk_column_list text;
+    tuple_join_condition text;
+    tuple_pos integer;
 BEGIN
     PERFORM agentcow._cow_require_reviewer(p_schema);
 
@@ -1773,20 +1777,28 @@ BEGIN
 
         FOR fk IN
             SELECT
-                kcu.column_name AS fk_column,
-                ccu.table_name AS referenced_table,
-                ccu.column_name AS referenced_column
-            FROM information_schema.table_constraints AS tc
-            JOIN information_schema.key_column_usage AS kcu
-              ON tc.constraint_name = kcu.constraint_name
-             AND tc.table_schema = kcu.table_schema
-            JOIN information_schema.constraint_column_usage AS ccu
-              ON ccu.constraint_name = tc.constraint_name
-             AND ccu.table_schema = tc.table_schema
-            WHERE tc.constraint_type = 'FOREIGN KEY'
-              AND tc.table_schema = p_schema
-              AND (tc.table_name = base_table_name || '_base' OR tc.table_name = base_table_name)
-            GROUP BY kcu.column_name, ccu.table_name, ccu.column_name
+                c.oid AS constraint_oid,
+                r.relname AS referenced_table,
+                (SELECT array_agg(ka.attname ORDER BY x.ord)
+                   FROM unnest(c.conkey) WITH ORDINALITY AS x(attnum, ord)
+                   JOIN pg_attribute ka
+                     ON ka.attrelid = c.conrelid AND ka.attnum = x.attnum)
+                    AS fk_columns,
+                (SELECT array_agg(ra.attname ORDER BY y.ord)
+                   FROM unnest(c.confkey) WITH ORDINALITY AS y(attnum, ord)
+                   JOIN pg_attribute ra
+                     ON ra.attrelid = c.confrelid AND ra.attnum = y.attnum)
+                    AS referenced_columns
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace ts ON ts.oid = t.relnamespace
+            JOIN pg_class r ON r.oid = c.confrelid
+            JOIN pg_namespace ns ON ns.oid = r.relnamespace
+            WHERE c.contype = 'f'
+              AND ts.nspname = p_schema
+              AND ns.nspname = p_schema
+              AND t.relname IN (base_table_name, base_table_name || '_base')
+            ORDER BY c.oid
         LOOP
             referenced_table_name := regexp_replace(fk.referenced_table, '_base$', '');
             referenced_changes_table := referenced_table_name || '_changes';
@@ -1796,6 +1808,24 @@ BEGIN
                 WHERE table_schema = p_schema
                   AND table_name = referenced_changes_table
             ) THEN
+                ref_column_list := '';
+                fk_column_list := '';
+                tuple_join_condition := '';
+                FOR tuple_pos IN 1 .. array_length(fk.referenced_columns, 1) LOOP
+                    IF tuple_pos > 1 THEN
+                        ref_column_list := ref_column_list || ', ';
+                        fk_column_list := fk_column_list || ', ';
+                        tuple_join_condition := tuple_join_condition || ' AND ';
+                    END IF;
+                    ref_column_list := ref_column_list
+                        || format('%I', fk.referenced_columns[tuple_pos]);
+                    fk_column_list := fk_column_list
+                        || format('%I', fk.fk_columns[tuple_pos]);
+                    tuple_join_condition := tuple_join_condition
+                        || format('a.%I = b.%I', fk.referenced_columns[tuple_pos],
+                                   fk.fk_columns[tuple_pos]);
+                END LOOP;
+
                 IF fk_query != '' THEN
                     fk_query := fk_query || ' UNION ';
                 END IF;
@@ -1803,28 +1833,28 @@ BEGIN
                 fk_query := fk_query || format($q$
                     SELECT a.operation_id as dep_on, b.operation_id as op_id
                     FROM (
-                        SELECT operation_id, %I, MIN(_cow_order) as earliest_order
+                        SELECT operation_id, %s, MIN(_cow_order) as earliest_order
                         FROM %I.%I
                         WHERE session_id = $1 AND _cow_deleted = false
-                        GROUP BY operation_id, %I
+                        GROUP BY operation_id, %s
                     ) a
                     JOIN (
-                        SELECT operation_id, %I, MIN(_cow_order) as earliest_order
+                        SELECT operation_id, %s, MIN(_cow_order) as earliest_order
                         FROM %I.%I
                         WHERE session_id = $1 AND _cow_deleted = false
-                        GROUP BY operation_id, %I
+                        GROUP BY operation_id, %s
                     ) b
-                      ON a.%I = b.%I
+                      ON %s
                      AND a.operation_id != b.operation_id
                      AND a.earliest_order < b.earliest_order
                 $q$,
-                    fk.referenced_column,
+                    ref_column_list,
                     p_schema, referenced_changes_table,
-                    fk.referenced_column,
-                    fk.fk_column,
+                    ref_column_list,
+                    fk_column_list,
                     p_schema, tbl.table_name,
-                    fk.fk_column,
-                    fk.referenced_column, fk.fk_column
+                    fk_column_list,
+                    tuple_join_condition
                 );
             END IF;
         END LOOP;
